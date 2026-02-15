@@ -8,14 +8,19 @@ import uuid
 import time
 import subprocess
 import sys
+import warnings
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 import cv2
 import numpy as np
 import skvideo.io
-try:
-    import tensorflow.compat.v1 as tf
-except ImportError:
-    import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+tf.get_logger().setLevel('ERROR')
 
 import network
 import guided_filter
@@ -41,14 +46,8 @@ class WB_Cartoonize:
         return image
 
     def load_model(self, weights_dir, gpu):
-        try:
-            tf.disable_eager_execution()
-        except:
-            None
-
         tf.reset_default_graph()
 
-        
         self.input_photo = tf.placeholder(tf.float32, [1, None, None, 3], name='input_image')
         network_out = network.unet_generator(self.input_photo)
         self.final_out = guided_filter.guided_filter(self.input_photo, network_out, r=1, eps=5e-3)
@@ -76,17 +75,14 @@ class WB_Cartoonize:
         batch_image = image.astype(np.float32)/127.5 - 1
         batch_image = np.expand_dims(batch_image, axis=0)
         
-        ## Session Run
         output = self.sess.run(self.final_out, feed_dict={self.input_photo: batch_image})
         
-        ## Post Process
         output = (np.squeeze(output)+1)*127.5
         output = np.clip(output, 0, 255).astype(np.uint8)
         
         return output
     
     def process_video(self, fname, frame_rate):
-        ## Capture video using opencv
         cap = cv2.VideoCapture(fname)
 
         target_size = (int(cap.get(3)),int(cap.get(4)))
@@ -98,15 +94,10 @@ class WB_Cartoonize:
             ret, frame = cap.read()
             
             if ret:
-                
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
                 frame = self.infer(frame)
-                
                 frame = cv2.resize(frame, target_size)
-                
                 out.writeFrame(frame)
-                
             else:
                 break
         cap.release()
